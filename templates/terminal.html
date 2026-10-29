@@ -112,11 +112,23 @@
 
 <script>
 const MODO_INICIAL = {{ modo|tojson }};
+const ENDERECO = {{ endereco|tojson }};
 
 const $ = s => document.querySelector(s);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const G = "█▓▒░#%&@$?!<>/\\01";
 const lixo = n => Array.from({length: n}, () => G[Math.floor(Math.random() * G.length)]).join("");
+
+// Duas máscaras que nunca corrompem o mesmo caractere: juntando as duas leituras, o endereço se reconstrói.
+const BLOCOS = "█▓▒░";
+function mascaras(txt) {
+  const idx = [...txt].map((c, i) => /[\p{L}\p{N}]/u.test(c) ? i : -1).filter(i => i >= 0)
+    .sort(() => Math.random() - 0.5);
+  const corte = Math.floor(idx.length * 0.4);
+  return [new Set(idx.slice(0, corte)), new Set(idx.slice(corte, corte * 2))];
+}
+const corromper = (txt, set) => [...txt]
+  .map((c, i) => set.has(i) ? BLOCOS[Math.floor(Math.random() * BLOCOS.length)] : c).join("");
 
 function log(txt, cls = "") {
   const d = document.createElement("div");
@@ -228,6 +240,17 @@ $("#btn-reset").addEventListener("click", async () => {
     barra(87 + Math.floor(Math.random() * 6));
     await sleep(450);
   }
+  log("[ERRO] leitura parcial: campo ORIGEM_UNIDADE (tentativa 1 de 2)", "err");
+  await sleep(700);
+  const [mA, mB] = mascaras(ENDERECO);
+  log("> ORIGEM_UNIDADE = " + corromper(ENDERECO, mA), "lixo");
+  barra(90);
+  await sleep(2200);
+  log("[ERRO] leitura parcial: campo ORIGEM_UNIDADE (tentativa 2 de 2)", "err");
+  await sleep(700);
+  log("> ORIGEM_UNIDADE = " + corromper(ENDERECO, mB), "lixo");
+  barra(92);
+  await sleep(2600);
   log("[!] ARQUIVO_OCULTO.bak encontrado", "err");
   await sleep(900);
   const linha = log("RESTRICAO_AGRESSAO = NULL", "lixo");

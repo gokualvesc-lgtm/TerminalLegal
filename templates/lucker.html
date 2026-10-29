@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lucker – Painel de manutenção</title>
+<style>
+  :root {
+    --fundo: #0c0a07;
+    --painel: #15110b;
+    --texto: #e8a33d;
+    --fraco: #8a6424;
+    --alerta: #e5484d;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fundo); color: var(--texto);
+    font-family: "IBM Plex Mono", "Courier New", monospace;
+    font-size: 15px; line-height: 1.55;
+    display: flex; justify-content: center; padding: 24px 16px;
+  }
+  body::after {
+    content: ""; position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 1px, transparent 1px 3px);
+  }
+  main { width: 100%; max-width: 780px; }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 2px; text-shadow: 0 0 8px rgba(232,163,61,.5); }
+  .sub { color: var(--fraco); margin: 0 0 14px; }
+  .aviso { border: 1px solid var(--alerta); color: var(--alerta); padding: 8px 14px; margin-bottom: 14px; }
+  #caminho { color: var(--fraco); margin-bottom: 6px; }
+  .caixa { border: 1px solid var(--fraco); background: var(--painel); }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li + li { border-top: 1px solid rgba(138,100,36,.35); }
+  li button {
+    width: 100%; display: flex; justify-content: space-between; gap: 12px;
+    font: inherit; color: var(--texto); background: transparent; border: 0;
+    padding: 9px 14px; cursor: pointer; text-align: left;
+  }
+  li button:hover { background: var(--texto); color: var(--fundo); }
+  li button:focus-visible { outline: 2px solid var(--texto); outline-offset: -2px; }
+  .kb { color: var(--fraco); }
+  li button:hover .kb { color: var(--fundo); }
+  #visor {
+    margin: 14px 0 0; padding: 14px; min-height: 160px; white-space: pre-wrap; word-break: break-word;
+    border: 1px solid var(--fraco); background: var(--painel); font: inherit;
+  }
+  #visor.err { color: var(--alerta); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Lucker – Painel de manutenção</h1>
+  <p class="sub">Acesso físico · placa traseira</p>
+  <div class="aviso">Redefinição de fábrica aplicada. A maioria dos arquivos foi apagada.</div>
+
+  <div id="caminho"></div>
+  <div class="caixa"><ul id="lista"></ul></div>
+  <pre id="visor"></pre>
+</main>
+
+<script>
+const ENDERECO = {{ endereco|tojson }};
+const VAZIO = "Arquivo vazio.";
+
+const FS = {
+  "/": [
+    { n: "logs", t: "dir" },
+    { n: "config", t: "dir" },
+    { n: "bkp", t: "dir" }
+  ],
+  "/logs": [
+    { n: "transferencia_020315.log", t: "file", kb: "1 KB", c:
+`REGISTRO DE TRANSFERÊNCIA · NP-TR-219
+Animatrônico: LUCKER
+Data: 02/03/2015
+
+Unidade de origem: NeuroPlay / DigiFun – Fábrica
+Endereço de origem: ${ENDERECO}
+
+Destino: DigiFun – Pizzaria Oficial
+Administração: TEC-047
+Autorização: Dr. Harley Davidson (assinatura digital validada)` },
+    { n: "manutencao.log", t: "file", kb: "0 KB", c: VAZIO }
+  ],
+  "/config": [
+    { n: "protocolo_protecao.cfg", t: "file", kb: "1 KB", c:
+`PROTOCOLO DE PROTEÇÃO
+Parâmetros: nenhum definido (padrão de fábrica)
+Última alteração: redefinição de fábrica
+Responsável técnico: [REGISTRO REMOVIDO]` },
+    { n: "comportamento.cfg", t: "file", kb: "0 KB", c: VAZIO }
+  ],
+  "/bkp": [
+    { n: "MENTE_VIRTUAL_BKP.dat", t: "file", kb: "?", bad: true, c:
+`ERRO: setor 0x4B434F52 ilegível.
+Leitura abortada.` }
+  ]
+};
+
+const $ = s => document.querySelector(s);
+
+function item(nome, kb, fn) {
+  const li = document.createElement("li");
+  const b = document.createElement("button");
+  const n = document.createElement("span");
+  const s = document.createElement("span");
+  n.textContent = nome;
+  s.textContent = kb;
+  s.className = "kb";
+  b.append(n, s);
+  b.addEventListener("click", fn);
+  li.appendChild(b);
+  return li;
+}
+
+function abrir(e) {
+  $("#visor").textContent = e.c;
+  $("#visor").className = e.bad ? "err" : "";
+}
+
+function listar(path) {
+  $("#caminho").textContent = "lucker:" + path;
+  $("#visor").textContent = "Selecione um arquivo.";
+  $("#visor").className = "";
+  const ul = $("#lista");
+  ul.innerHTML = "";
+  if (path !== "/") {
+    ul.appendChild(item("..", "", () => listar("/")));
+  }
+  for (const e of FS[path]) {
+    if (e.t === "dir") {
+      ul.appendChild(item(e.n + "/", "pasta", () => listar((path === "/" ? "" : path) + "/" + e.n)));
+    } else {
+      ul.appendChild(item(e.n, e.kb, () => abrir(e)));
+    }
+  }
+}
+
+listar("/");
+</script>
+</body>
+</html>
