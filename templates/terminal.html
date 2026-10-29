@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigiFun – Terminal de configurações</title>
+<style>
+  :root {
+    --fundo: #0c0a07;
+    --painel: #15110b;
+    --texto: #e8a33d;
+    --fraco: #8a6424;
+    --alerta: #e5484d;
+    --ok: #5fd1a6;
+    --glitch: #d946ef;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--fundo);
+    color: var(--texto);
+    font-family: "IBM Plex Mono", "Courier New", monospace;
+    font-size: 15px;
+    line-height: 1.55;
+    display: flex;
+    justify-content: center;
+    padding: 24px 16px;
+  }
+  body::after { /* linhas de varredura */
+    content: "";
+    position: fixed; inset: 0; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.28) 0 1px, transparent 1px 3px);
+  }
+  main { width: 100%; max-width: 780px; }
+  h1 { font-size: 17px; font-weight: 600; margin: 0 0 2px; text-shadow: 0 0 8px rgba(232,163,61,.5); }
+  .sub { color: var(--fraco); margin: 0 0 18px; }
+  .status { border: 1px solid var(--fraco); padding: 10px 14px; margin-bottom: 14px; background: var(--painel); }
+  .status div { display: flex; justify-content: space-between; gap: 12px; }
+  .ativo { color: var(--alerta); }
+  .seguro { color: var(--ok); }
+  .aviso { color: var(--texto); }
+  #log {
+    border: 1px solid var(--fraco); background: var(--painel);
+    height: 250px; overflow-y: auto; padding: 10px 14px; margin-bottom: 14px;
+  }
+  #log div { white-space: pre-wrap; word-break: break-word; }
+  #log .dim { color: var(--fraco); }
+  #log .err { color: var(--alerta); }
+  #log .ok { color: var(--ok); }
+  #log .lixo { color: var(--glitch); }
+  .barra-caixa { height: 18px; border: 1px solid var(--fraco); margin-bottom: 14px; display: none; position: relative; }
+  #barra { height: 100%; width: 0; background: var(--texto); }
+  #pct { position: absolute; right: 8px; top: -1px; font-size: 12px; mix-blend-mode: difference; color: #fff; }
+  .acoes { display: flex; gap: 12px; flex-wrap: wrap; }
+  button {
+    font: inherit; color: var(--texto); background: transparent;
+    border: 1px solid var(--texto); padding: 10px 16px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { background: var(--texto); color: var(--fundo); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  button:disabled { opacity: .3; cursor: not-allowed; }
+  button.perigo { border-color: var(--alerta); color: var(--alerta); }
+  button.perigo:hover:not(:disabled) { background: var(--alerta); color: var(--fundo); }
+  #senha-form { display: none; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  #senha {
+    flex: 1; min-width: 200px; font: inherit; color: var(--texto);
+    background: var(--fundo); border: 1px solid var(--texto); padding: 10px 12px;
+    text-transform: uppercase;
+  }
+  #senha::placeholder { color: var(--fraco); text-transform: none; }
+  #erro { color: var(--alerta); width: 100%; margin: 0; min-height: 1.4em; }
+
+  /* tela corrompida */
+  body.corrompido main { animation: tremer .18s steps(2) infinite; }
+  body.corrompido #barra { background: var(--glitch); }
+  body.corrompido h1 { color: var(--glitch); }
+  @keyframes tremer {
+    0% { transform: translate(0,0); }
+    50% { transform: translate(-3px, 1px); filter: hue-rotate(40deg); }
+    100% { transform: translate(2px, -1px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    body.corrompido main { animation: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>DigiFun – Pizzaria oficial</h1>
+  <p class="sub">Terminal de configurações · operador TEC-047</p>
+
+  <section class="status" aria-live="polite">
+    <div><span>Lockdown</span><span id="st-lockdown" class="ativo">ATIVO</span></div>
+    <div><span>Lucker</span><span id="st-lucker" class="aviso">OPERANDO · protocolo de proteção ativo</span></div>
+  </section>
+
+  <section id="log" aria-live="polite"></section>
+
+  <div class="barra-caixa" id="barra-caixa"><div id="barra"></div><span id="pct">0%</span></div>
+
+  <div class="acoes">
+    <button id="btn-lock">Desativar lockdown</button>
+    <button id="btn-reset" class="perigo">Redefinição de fábrica: Lucker</button>
+  </div>
+
+  <form id="senha-form" autocomplete="off">
+    <input id="senha" placeholder="Código de autorização ou DDMMAAAA" maxlength="20" aria-label="Código de autorização">
+    <button type="submit">Confirmar</button>
+    <p id="erro" role="alert"></p>
+  </form>
+</main>
+
+<script>
+const MODO_INICIAL = {{ modo|tojson }};
+
+const $ = s => document.querySelector(s);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const G = "█▓▒░#%&@$?!<>/\\01";
+const lixo = n => Array.from({length: n}, () => G[Math.floor(Math.random() * G.length)]).join("");
+
+function log(txt, cls = "") {
+  const d = document.createElement("div");
+  d.textContent = txt;
+  if (cls) d.className = cls;
+  $("#log").appendChild(d);
+  $("#log").scrollTop = $("#log").scrollHeight;
+  return d;
+}
+function barra(p) {
+  p = Math.round(p);
+  $("#barra").style.width = p + "%";
+  $("#pct").textContent = p + "%";
+}
+async function avancar(de, ate, ms) {
+  const dt = ms / Math.max(ate - de, 1);
+  for (let p = de; p <= ate; p++) { barra(p); await sleep(dt); }
+}
+function travar() { $("#btn-lock").disabled = true; $("#btn-reset").disabled = true; }
+
+function estadoFinal(modo) {
+  travar();
+  if (modo === "desbloqueado") {
+    $("#st-lockdown").textContent = "DESATIVADO";
+    $("#st-lockdown").className = "seguro";
+  } else if (modo === "redefinido") {
+    $("#st-lucker").textContent = "SEM RESPOSTA A COMANDOS";
+    $("#st-lucker").className = "ativo";
+  }
+}
+
+async function post(url, corpo) {
+  const r = await fetch(url, {
+    method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(corpo || {})
+  });
+  return { status: r.status, dados: await r.json().catch(() => ({})) };
+}
+
+/* ---------- desativar lockdown ---------- */
+$("#btn-lock").addEventListener("click", () => {
+  $("#senha-form").style.display = "flex";
+  $("#senha").focus();
+});
+
+$("#senha-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  const senha = $("#senha").value;
+  if (!senha.trim()) return;
+  const { status, dados } = await post("/api/desbloquear", { senha });
+  if (status !== 200) {
+    $("#erro").textContent = dados.erro || "Falha na autorização.";
+    log("> autorização negada", "err");
+    $("#senha").select();
+    return;
+  }
+  $("#erro").textContent = "";
+  $("#senha-form").style.display = "none";
+  travar();
+  $("#barra-caixa").style.display = "block";
+
+  const etapas = [
+    [15, "> validando credencial..."],
+    [40, "> desativando travas magnéticas..."],
+    [70, "> liberando portas automáticas..."],
+    [100, "> encerrando protocolo de lockdown..."],
+  ];
+  let atual = 0;
+  for (const [alvo, msg] of etapas) {
+    log(msg, "dim");
+    await avancar(atual, alvo, 1800);
+    atual = alvo;
+  }
+  await sleep(500);
+  log("LOCKDOWN DESATIVADO. Todas as saídas liberadas.", "ok");
+  estadoFinal("desbloqueado");
+});
+
+/* ---------- redefinição de fábrica ---------- */
+$("#btn-reset").addEventListener("click", async () => {
+  const { status } = await post("/api/redefinir");
+  if (status !== 200) return;
+  $("#senha-form").style.display = "none";
+  travar();
+  $("#barra-caixa").style.display = "block";
+
+  const etapas = [
+    [20, "> encerrando processos do Lucker..."],
+    [45, "> apagando configurações de comportamento..."],
+    [70, "> restaurando padrão de fábrica..."],
+    [86, "> reescrevendo memória de backup..."],
+  ];
+  let atual = 0;
+  for (const [alvo, msg] of etapas) {
+    log(msg, "dim");
+    await avancar(atual, alvo, 1600);
+    atual = alvo;
+  }
+
+  // --- trecho corrompido ---
+  barra(87);
+  log("> lendo MENTE_VIRTUAL_BKP.dat ...", "dim");
+  await sleep(900);
+  document.body.classList.add("corrompido");
+  log("[ERRO] setor 0x4B434F52 ilegível", "err");
+  await sleep(700);
+  for (let i = 0; i < 4; i++) {
+    log("> " + lixo(36), "lixo");
+    barra(87 + Math.floor(Math.random() * 6));
+    await sleep(450);
+  }
+  log("[!] ARQUIVO_OCULTO.bak encontrado", "err");
+  await sleep(900);
+  const linha = log("RESTRICAO_AGRESSAO = NULL", "lixo");
+  for (let i = 0; i < 6; i++) {
+    linha.textContent = "RESTRI" + lixo(1) + "AO_AG" + lixo(1) + "ESSAO = NU" + lixo(2);
+    await sleep(200);
+  }
+  linha.textContent = "RESTRICAO_AGRESSAO = NULL";
+  await sleep(700);
+  log("[!] ARQUIVO CORROMPIDO ADICIONADO AO LUCKER", "err");
+  await sleep(1400);
+
+  // --- conclusão ---
+  log("> continuando redefinição...", "dim");
+  await avancar(88, 100, 1800);
+  await sleep(400);
+  document.body.classList.remove("corrompido");
+  log("REDEFINIÇÃO CONCLUÍDA.", "ok");
+  log("Lucker: sem resposta a comandos.", "err");
+  estadoFinal("redefinido");
+});
+
+/* ---------- estado ao carregar ---------- */
+log("> terminal iniciado", "dim");
+log("[LOG] lockdown acionado · origem: manual (TEC-047)", "dim"); // remova esta linha se não quiser a pista
+log("[LOG] Lucker: protocolo de proteção ativo", "dim");
+if (MODO_INICIAL) {
+  log(MODO_INICIAL === "desbloqueado"
+    ? "LOCKDOWN DESATIVADO. Todas as saídas liberadas."
+    : "REDEFINIÇÃO CONCLUÍDA. Lucker: sem resposta a comandos.",
+    MODO_INICIAL === "desbloqueado" ? "ok" : "err");
+  estadoFinal(MODO_INICIAL);
+}
+</script>
+</body>
+</html>
