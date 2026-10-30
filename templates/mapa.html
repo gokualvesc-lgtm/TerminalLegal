@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DigiFun OS</title>
+<style>
+  :root { --f:#0c0a07; --p:#15110b; --t:#e8a33d; --fr:#8a6424; --al:#e5484d; --ok:#5fd1a6; }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--f); color: var(--t); font: 14px/1.5 "IBM Plex Mono","Courier New",monospace; }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:50;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.25) 0 1px, transparent 1px 3px); }
+  button, input, select, textarea { font: inherit; color: var(--t); background: var(--f); border: 1px solid var(--fr); padding: 6px 10px; }
+  button { cursor: pointer; background: transparent; border-color: var(--t); }
+  button:hover:not(:disabled), button.ativo { background: var(--t); color: var(--f); }
+  button.off { opacity: .45; }
+  :focus-visible { outline: 2px solid var(--ok); outline-offset: 2px; }
+  hr { border: 0; border-top: 1px solid var(--fr); margin: 12px 0; }
+  .fraco { color: var(--fr); margin: 4px 0; }
+  .linha { display: flex; gap: 8px; flex-wrap: wrap; margin: 6px 0; }
+  .linha > * { flex: 1; min-width: 70px; }
+
+  /* login */
+  #login { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: var(--f); }
+  #login form { width: min(380px, 92vw); border: 1px solid var(--t); background: var(--p); }
+  #login header, .jan > header { background: var(--t); color: var(--f); padding: 2px 10px; font-weight: 600; display: flex; justify-content: space-between; }
+  #login .corpo { padding: 16px; display: grid; gap: 10px; }
+  #erro { color: var(--al); margin: 0; min-height: 1.4em; }
+
+  /* desktop */
+  #desktop { display: flex; flex-direction: column; height: 100%; }
+  #janelas { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: grid; gap: 12px; align-content: start;
+    grid-template-columns: minmax(0,1.7fr) minmax(0,1fr); }
+  #j-mapa { grid-row: span 4; }
+  .jan { border: 1px solid var(--t); background: var(--p); min-width: 0; }
+  .corpo { padding: 10px; }
+  #barra { display: flex; align-items: center; gap: 10px; border-top: 1px solid var(--t); background: var(--p); padding: 6px 12px; }
+  #barra .logo { font-weight: 700; padding-right: 10px; border-right: 1px solid var(--fr); }
+  #tarefas { flex: 1; display: flex; gap: 6px; flex-wrap: wrap; }
+  @media (max-width: 900px) { #janelas { grid-template-columns: 1fr; } #j-mapa { grid-row: auto; } }
+
+  /* mapa */
+  #tabs { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+  #tabs label { color: var(--fr); }
+  #mapa { width: 100%; height: auto; display: block; touch-action: none; }
+  .contorno { fill: none; stroke: var(--fr); stroke-dasharray: 6 5; }
+  .sala rect { fill: var(--p); stroke: var(--t); stroke-width: 1.2; }
+  .sala.oculta rect { fill: none; stroke: var(--fr); stroke-dasharray: 4 4; }
+  .sala.oculta text { fill: var(--fr); }
+  .sala.territorio rect { stroke: var(--al); }
+  .sala.chave rect { stroke: var(--ok); }
+  .sala.sel rect { stroke-width: 3.5; }
+  .jogador .sala, .mestre .sala { cursor: default; }
+  .mestre .sala { cursor: pointer; }
+  .nome { fill: var(--t); font-size: 14px; pointer-events: none; }
+  .rot { fill: var(--t); font-size: 11px; pointer-events: none; }
+  .token { touch-action: none; }
+  .mestre .token { cursor: grab; }
+  .token circle { stroke: var(--f); stroke-width: 2; }
+  .token.grupo circle { fill: var(--ok); }
+  .token.anim circle { fill: var(--al); }
+  .token.oculto { opacity: .5; }
+  .token.oculto circle { stroke: var(--t); stroke-dasharray: 3 2; }
+  .token.sel circle { stroke: var(--t); stroke-width: 3; }
+  @media (prefers-reduced-motion: no-preference) {
+    .token.grupo circle { animation: pulso 1.8s ease-in-out infinite; }
+    @keyframes pulso { 50% { opacity: .55; } }
+    #alerta.critico #alerta-caixa { animation: piscar .7s steps(2) infinite; }
+    @keyframes piscar { 50% { border-color: var(--t); } }
+  }
+
+  /* dados e listas */
+  #dados { display: flex; flex-wrap: wrap; gap: 6px; }
+  #resultado { font-size: 22px; min-height: 36px; margin: 8px 0; }
+  #resultado.sucesso { color: var(--ok); } #resultado.falha { color: var(--al); }
+  ul.lista { list-style: none; margin: 0; padding: 0; max-height: 170px; overflow: auto; }
+  ul.lista li { border-top: 1px solid rgba(138,100,36,.4); padding: 3px 0; }
+  textarea { width: 100%; min-height: 150px; resize: vertical; }
+  #av-texto { width: 100%; }
+
+  /* alerta */
+  #alerta { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(0,0,0,.8); }
+  #alerta-caixa { width: min(460px, 92vw); border: 2px solid var(--t); background: var(--p); padding: 20px; text-align: center; }
+  #alerta.alerta #alerta-caixa, #alerta.critico #alerta-caixa { border-color: var(--al); }
+  #alerta-nivel { color: var(--al); font-weight: 700; margin-bottom: 6px; }
+  #alerta-texto { font-size: 18px; margin: 8px 0 16px; }
+</style>
+</head>
+<body class="{{ modo }}">
+
+<div id="login">
+  <form autocomplete="off">
+    <header><span>DigiFun OS 3.2</span><span>acesso</span></header>
+    <div class="corpo">
+      <div>Pizzaria oficial · estação de trabalho</div>
+      {% if modo == "mestre" %}
+      <input id="pin" type="password" placeholder="PIN do mestre" aria-label="PIN do mestre">
+      {% else %}
+      <input id="usuario" maxlength="20" placeholder="Seu nome" aria-label="Seu nome">
+      {% endif %}
+      <button type="submit">Entrar no sistema</button>
+      <p id="erro" role="alert"></p>
+      <div class="fraco">O áudio do sistema é ativado ao entrar.</div>
+    </div>
+  </form>
+</div>
+
+<div id="desktop" hidden>
+  <div id="janelas">
+    <section class="jan" id="j-mapa" data-t="Mapa">
+      <header><span>Mapa da fábrica</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo"><div id="tabs"></div><svg id="mapa" viewBox="0 0 680 490" role="img" aria-label="Mapa da fábrica"></svg></div>
+    </section>
+
+    <section class="jan" id="j-dados" data-t="Dados">
+      <header><span>Rolagem de dados</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo">
+        <div id="dados"></div>
+        {% if modo == "mestre" %}<label class="fraco"><input type="checkbox" id="secreta"> rolar em segredo</label>{% endif %}
+        <div id="resultado" aria-live="polite"></div>
+        <ul class="lista" id="rolagens"></ul>
+      </div>
+    </section>
+
+    <section class="jan" id="j-avisos" data-t="Avisos">
+      <header><span>Avisos do sistema</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo"><ul class="lista" id="avisos"></ul></div>
+    </section>
+
+    <section class="jan" id="j-notas" data-t="Notas">
+      <header><span>Anotações</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo">
+        <textarea id="notas" aria-label="Anotações" placeholder="{% if modo == 'mestre' %}Notas do mestre (salvas no servidor){% else %}Suas anotações (ficam só neste aparelho){% endif %}"></textarea>
+      </div>
+    </section>
+
+    {% if modo == "mestre" %}
+    <section class="jan" id="j-mestre" data-t="Mestre">
+      <header><span>Controle do mestre</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo">
+        <div id="sel-info"></div>
+        <hr>
+        <div class="linha"><button id="rev-andar">Revelar andar</button><button id="oc-andar">Ocultar andar</button></div>
+        <hr>
+        <div class="linha"><input id="dt-in" type="number" min="1" max="40" placeholder="DT"><button id="dt-set">Definir DT</button><button id="dt-clr">Limpar</button></div>
+        <p class="fraco" id="dt-atual"></p>
+        <hr>
+        <input id="av-texto" maxlength="200" placeholder="Aviso aos jogadores" aria-label="Texto do aviso">
+        <div class="linha">
+          <select id="av-som" aria-label="Som"><option value="sistema">Som: sistema</option><option value="alarme">Som: alarme</option><option value="sirene">Som: sirene</option><option value="estatica">Som: estática</option><option value="grave">Som: grave</option></select>
+          <select id="av-nivel" aria-label="Nível"><option value="info">Info</option><option value="alerta">Alerta</option><option value="critico">Crítico</option></select>
+        </div>
+        <div class="linha"><button id="av-env">Enviar aviso</button><button id="av-test">Testar som</button></div>
+        <hr>
+        <button id="reiniciar">Reiniciar tudo</button>
+      </div>
+    </section>
+    {% endif %}
+  </div>
+  <footer id="barra"><span class="logo">DigiFun OS</span><nav id="tarefas"></nav><span id="relogio"></span></footer>
+</div>
+
+<div id="alerta" hidden>
+  <div id="alerta-caixa" role="alertdialog" aria-labelledby="alerta-nivel">
+    <div id="alerta-nivel"></div><p id="alerta-texto"></p><button id="alerta-ok">Entendido</button>
+  </div>
+</div>
+
+<script>
+const MODO = {{ modo|tojson }};
+const GM = MODO === "mestre";
+const $ = s => document.querySelector(s);
+const NS = "http://www.w3.org/2000/svg";
+const TIPOS = { territorio: "Território de animatrônico", chave: "Ponto-chave", neutro: "Sala neutra" };
+let PIN = "", NOME = "", andar = null, sel = null, dados = null, arrastando = false, visto = null, ac = null;
+const ult = { mapa: "", rol: "", av: "" };
+
+function el(tag, at = {}, txt) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in at) e.setAttribute(k, at[k]);
+  if (txt != null) e.textContent = txt;
+  return e;
+}
+function btn(txt, fn) { const b = document.createElement("button"); b.textContent = txt; b.addEventListener("click", fn); return b; }
+async function api(url, corpo) {
+  const o = { headers: { "X-PIN": PIN } };
+  if (corpo !== undefined) { o.method = "POST"; o.headers["Content-Type"] = "application/json"; o.body = JSON.stringify(corpo); }
+  return fetch(url, o);
+}
+async function acao(url, corpo) { await api(url, corpo); await carregar(); }
+
+/* ---------- som (sintetizado, sem arquivos) ---------- */
+function audio() {
+  ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+  if (ac.state === "suspended") ac.resume();
+  return ac;
+}
+function tom(f, t0, dur, tipo = "square", vol = .15, f2) {
+  const a = audio(), o = a.createOscillator(), g = a.createGain(), t = a.currentTime + t0;
+  o.type = tipo; o.frequency.setValueAtTime(f, t);
+  if (f2) o.frequency.linearRampToValueAtTime(f2, t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(.001, t + dur);
+  o.connect(g).connect(a.destination); o.start(t); o.stop(t + dur);
+}
+function ruido(dur, vol = .2) {
+  const a = audio(), b = a.createBuffer(1, a.sampleRate * dur, a.sampleRate), d = b.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const s = a.createBufferSource(), g = a.createGain();
+  s.buffer = b; g.gain.setValueAtTime(vol, a.currentTime); g.gain.linearRampToValueAtTime(0, a.currentTime + dur);
+  s.connect(g).connect(a.destination); s.start();
+}
+const SONS = {
+  alarme() { for (let i = 0; i < 6; i++) tom(880, i * .3, .2); },
+  sirene() { for (let i = 0; i < 3; i++) tom(500, i, 1, "sawtooth", .15, 1000); },
+  estatica() { ruido(1.2); },
+  sistema() { tom(660, 0, .15, "sine", .2); tom(990, .15, .3, "sine", .2); },
+  grave() { tom(55, 0, 2.2, "sawtooth", .3, 40); ruido(.6, .08); },
+};
+
+/* ---------- entrada ---------- */
+$("#login form").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (GM) { PIN = $("#pin").value; NOME = "Mestre"; }
+  else { NOME = $("#usuario").value.trim() || "Jogador"; }
+  audio();
+  if (!(await carregar())) { $("#erro").textContent = "Credencial incorreta."; return; }
+  $("#login").hidden = true; $("#desktop").hidden = false;
+  iniciar();
+});
+
+function iniciar() {
+  for (const n of [4, 6, 8, 10, 12, 20, 100]) $("#dados").appendChild(btn("d" + n, () => rolar(n)));
+  document.querySelectorAll(".jan").forEach(j => {
+    const b = btn(j.dataset.t, () => { j.hidden = !j.hidden; b.classList.toggle("off", j.hidden); });
+    $("#tarefas").appendChild(b);
+  });
+  const nt = $("#notas");
+  if (GM) {
+    nt.value = dados.notas || "";
+    let t; nt.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => api("/api/mestre/notas", { texto: nt.value }), 800); });
+    controlesMestre();
+  } else {
+    nt.value = localStorage.getItem("notas") || "";
+    nt.addEventListener("input", () => localStorage.setItem("notas", nt.value));
+  }
+  $("#alerta-ok").addEventListener("click", () => { $("#alerta").hidden = true; });
+  const hora = () => { $("#relogio").textContent = new Date().toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }); };
+  hora(); setInterval(hora, 20000);
+  setInterval(carregar, 1500);
+}
+
+/* ---------- sincronização ---------- */
+async function carregar() {
+  const r = await api(GM ? "/api/mestre/jogo" : "/api/jogo");
+  if (!r.ok) return false;
+  dados = await r.json();
+  const m = JSON.stringify([dados.andares, dados.salas, dados.tokens]);
+  if (m !== ult.mapa && !arrastando) { ult.mapa = m; desenharMapa(); if (GM) painelMestre(); }
+  const rl = JSON.stringify(dados.rolagens);
+  if (rl !== ult.rol) { ult.rol = rl; listarRolagens(); }
+  tratarAvisos();
+  if (GM) $("#dt-atual") && ($("#dt-atual").textContent = dados.dt ? "DT atual: " + dados.dt + " (jogadores veem só sucesso ou falha)" : "Nenhuma DT definida.");
+  return true;
+}
+
+/* ---------- mapa ---------- */
+function ponto(e) {
+  const svg = $("#mapa"), p = svg.createSVGPoint();
+  p.x = e.clientX; p.y = e.clientY;
+  return p.matrixTransform(svg.getScreenCTM().inverse());
+}
+function desenharMapa() {
+  const lista = dados.andares;
+  if (!lista.some(a => a.id === andar)) andar = lista.length ? lista[0].id : null;
+  const tabs = $("#tabs"); tabs.replaceChildren();
+  for (const a of lista) {
+    const b = btn(a.nome, () => { andar = a.id; sel = null; desenharMapa(); painelMestre(); });
+    if (a.id === andar) b.classList.add("ativo");
+    tabs.appendChild(b);
+    if (GM) {
+      const l = document.createElement("label"), c = document.createElement("input");
+      c.type = "checkbox"; c.checked = a.visivel;
+      c.addEventListener("change", () => acao("/api/mestre/andar", { id: a.id, visivel: c.checked }));
+      l.append(c, " jogadores veem"); tabs.appendChild(l);
+    }
+  }
+  const svg = $("#mapa");
+  svg.replaceChildren(el("rect", { x: 30, y: 30, width: 620, height: 432, rx: 10, class: "contorno" }));
+  if (!andar) { svg.appendChild(el("text", { x: 340, y: 250, "text-anchor": "middle", class: "nome" }, "Sem sinal. Nenhuma área mapeada.")); return; }
+  for (const s of dados.salas.filter(s => s.andar === andar)) {
+    const marcada = sel && sel.k === "sala" && sel.id === s.id;
+    const g = el("g", { class: "sala " + (s.estado || "revelada") + " " + (s.tipo || "") + (marcada ? " sel" : "") });
+    g.append(
+      el("rect", { x: s.x, y: s.y, width: s.w, height: s.h, rx: 8 }),
+      el("text", { x: s.x + s.w / 2, y: s.y + s.h / 2 - 8, "text-anchor": "middle", class: "nome" }, s.nome)
+    );
+    if (GM) g.addEventListener("click", () => { sel = { k: "sala", id: s.id }; desenharMapa(); painelMestre(); });
+    svg.appendChild(g);
+  }
+  for (const t of dados.tokens.filter(t => t.andar === andar)) {
+    const marcado = sel && sel.k === "token" && sel.id === t.id;
+    const g = el("g", { class: "token " + t.tipo + (t.visivel === false ? " oculto" : "") + (marcado ? " sel" : ""), transform: `translate(${t.x},${t.y})` });
+    g.append(el("circle", { r: 11 }), el("text", { y: 27, "text-anchor": "middle", class: "rot" }, t.nome));
+    if (GM) arrastavel(g, t);
+    svg.appendChild(g);
+  }
+}
+function arrastavel(g, t) {
+  g.addEventListener("pointerdown", ev => {
+    ev.stopPropagation(); g.setPointerCapture(ev.pointerId);
+    sel = { k: "token", id: t.id }; painelMestre(); arrastando = true;
+    document.querySelectorAll(".sel").forEach(x => x.classList.remove("sel")); g.classList.add("sel");
+    const mover = e => {
+      const p = ponto(e);
+      t.x = Math.max(0, Math.min(680, p.x)); t.y = Math.max(0, Math.min(490, p.y));
+      g.setAttribute("transform", `translate(${t.x},${t.y})`);
+    };
+    const fim = async () => {
+      g.removeEventListener("pointermove", mover); g.removeEventListener("pointerup", fim);
+      arrastando = false;
+      await acao("/api/mestre/token", { id: t.id, x: Math.round(t.x), y: Math.round(t.y) });
+    };
+    g.addEventListener("pointermove", mover); g.addEventListener("pointerup", fim);
+  });
+}
+
+/* ---------- dados ---------- */
+async function rolar(n) {
+  const r = await api("/api/rolar", { dado: n, nome: NOME, secreta: GM && $("#secreta").checked });
+  const d = await r.json();
+  const x = d.rolagem, out = $("#resultado");
+  out.textContent = "d" + x.dado + ": " + x.valor + (x.ok === true ? " · sucesso" : x.ok === false ? " · falha" : "");
+  out.className = x.ok === true ? "sucesso" : x.ok === false ? "falha" : "";
+  await carregar();
+}
+function listarRolagens() {
+  const ul = $("#rolagens"); ul.replaceChildren();
+  for (const r of [...dados.rolagens].reverse()) {
+    const li = document.createElement("li");
+    li.textContent = r.nome + " d" + r.dado + ": " + r.valor
+      + (r.ok === true ? " · sucesso" : r.ok === false ? " · falha" : "")
+      + (r.secreta ? " (secreta)" : "") + (GM && r.dt && r.dado === 20 ? " [DT " + r.dt + "]" : "");
+    ul.appendChild(li);
+  }
+}
+
+/* ---------- avisos ---------- */
+function tratarAvisos() {
+  const av = dados.avisos, max = av.length ? av[av.length - 1].id : 0;
+  if (visto === null) visto = max;
+  else for (const a of av) if (a.id > visto) { visto = a.id; mostrarAviso(a); }
+  const js = JSON.stringify(av);
+  if (js !== ult.av) {
+    ult.av = js;
+    const ul = $("#avisos"); ul.replaceChildren();
+    for (const a of [...av].reverse()) { const li = document.createElement("li"); li.textContent = a.texto; ul.appendChild(li); }
+  }
+}
+function mostrarAviso(a) {
+  if (GM) return;
+  $("#alerta").className = a.nivel;
+  $("#alerta-nivel").textContent = a.nivel === "critico" ? "ALERTA CRÍTICO" : a.nivel === "alerta" ? "ALERTA" : "AVISO DO SISTEMA";
+  $("#alerta-texto").textContent = a.texto;
+  $("#alerta").hidden = false;
+  try { (SONS[a.som] || SONS.sistema)(); } catch (e) {}
+}
+
+/* ---------- mestre ---------- */
+function painelMestre() {
+  const p = $("#sel-info"); if (!p) return;
+  p.replaceChildren();
+  const add = (tag, txt) => { const e = document.createElement(tag); e.textContent = txt; p.appendChild(e); return e; };
+  if (!sel) { add("p", "Clique numa sala ou arraste um marcador. Ao soltar o grupo numa sala, ela é revelada."); return; }
+  if (sel.k === "sala") {
+    const s = dados.salas.find(x => x.id === sel.id); if (!s) return;
+    const rev = s.estado === "revelada";
+    add("strong", s.nome); add("p", TIPOS[s.tipo] + ", " + (rev ? "revelada" : "oculta")); add("p", s.notas || "Sem notas.");
+    p.appendChild(btn(rev ? "Ocultar dos jogadores" : "Revelar aos jogadores", () => acao("/api/mestre/sala", { id: s.id, estado: rev ? "oculta" : "revelada" })));
+  } else {
+    const t = dados.tokens.find(x => x.id === sel.id); if (!t) return;
+    add("strong", t.nome); add("p", t.visivel ? "Visível aos jogadores" : "Só o mestre vê");
+    const linha = document.createElement("div"); linha.className = "linha";
+    linha.appendChild(btn(t.visivel ? "Esconder" : "Mostrar aos jogadores", () => acao("/api/mestre/token", { id: t.id, visivel: !t.visivel })));
+    for (const a of dados.andares.filter(a => a.id !== t.andar))
+      linha.appendChild(btn("Levar ao " + a.nome, () => { andar = a.id; acao("/api/mestre/token", { id: t.id, andar: a.id, x: 340, y: 250 }); }));
+    p.appendChild(linha);
+  }
+}
+function controlesMestre() {
+  $("#rev-andar").addEventListener("click", () => andar && acao("/api/mestre/tudo", { andar, estado: "revelada" }));
+  $("#oc-andar").addEventListener("click", () => andar && acao("/api/mestre/tudo", { andar, estado: "oculta" }));
+  $("#dt-set").addEventListener("click", () => acao("/api/mestre/dt", { dt: parseInt($("#dt-in").value, 10) || null }));
+  $("#dt-clr").addEventListener("click", () => { $("#dt-in").value = ""; acao("/api/mestre/dt", { dt: null }); });
+  $("#av-env").addEventListener("click", async () => {
+    const texto = $("#av-texto").value.trim(); if (!texto) return;
+    await acao("/api/mestre/aviso", { texto, som: $("#av-som").value, nivel: $("#av-nivel").value });
+    $("#av-texto").value = "";
+  });
+  $("#av-test").addEventListener("click", () => SONS[$("#av-som").value]());
+  $("#reiniciar").addEventListener("click", () => { if (confirm("Reiniciar mapa, marcadores, avisos e rolagens?")) { sel = null; acao("/api/mestre/reiniciar", {}); } });
+}
+</script>
+</body>
+</html>
