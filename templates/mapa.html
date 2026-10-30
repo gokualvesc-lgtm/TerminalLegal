@@ -80,6 +80,14 @@
   textarea { width: 100%; min-height: 150px; resize: vertical; }
   #av-texto { width: 100%; }
 
+  /* arquivos */
+  ul.lista li button { width: 100%; text-align: left; border: 0; padding: 3px 0; }
+  ul.lista li.doc { display: flex; gap: 8px; align-items: center; }
+  ul.lista li.doc button:last-child { width: auto; border: 1px solid var(--fr); padding: 2px 8px; }
+  button.novo { color: var(--ok); }
+  #arq-visor pre { white-space: pre-wrap; word-break: break-word; margin: 8px 0 0; padding: 10px; border: 1px solid var(--fr); background: var(--f); font: inherit; }
+  #arq-editor input:not([type]) { width: 100%; }
+
   /* alerta */
   #alerta { position: fixed; inset: 0; z-index: 45; display: grid; place-items: center; background: rgba(0,0,0,.8); }
   #alerta-caixa { width: min(460px, 92vw); border: 2px solid var(--t); background: var(--p); padding: 20px; text-align: center; }
@@ -136,6 +144,24 @@
       </div>
     </section>
 
+    <section class="jan" id="j-arquivos" data-t="Arquivos">
+      <header><span>Arquivos</span><span>▪ ▪ ▪</span></header>
+      <div class="corpo">
+        <ul class="lista" id="arq-lista"></ul>
+        <div id="arq-visor" aria-live="polite"></div>
+        {% if modo == "mestre" %}
+        <hr>
+        <div id="arq-editor">
+          <input id="arq-titulo" maxlength="80" placeholder="Título do documento" aria-label="Título">
+          <div class="linha"><input id="arq-pasta" maxlength="40" placeholder="Pasta (opcional)" aria-label="Pasta"><input id="arq-senha" maxlength="40" placeholder="Senha (opcional)" aria-label="Senha"></div>
+          <textarea id="arq-texto" placeholder="Conteúdo do documento" aria-label="Conteúdo"></textarea>
+          <label class="fraco"><input type="checkbox" id="arq-lib"> liberado aos jogadores</label>
+          <div class="linha"><button id="arq-salvar">Salvar</button><button id="arq-novo">Novo</button><button id="arq-apagar">Apagar</button></div>
+        </div>
+        {% endif %}
+      </div>
+    </section>
+
     {% if modo == "mestre" %}
     <section class="jan" id="j-mestre" data-t="Mestre">
       <header><span>Controle do mestre</span><span>▪ ▪ ▪</span></header>
@@ -175,7 +201,7 @@ const $ = s => document.querySelector(s);
 const NS = "http://www.w3.org/2000/svg";
 const TIPOS = { territorio: "Território de animatrônico", chave: "Ponto-chave", neutro: "Sala neutra" };
 let PIN = "", NOME = "", andar = null, sel = null, dados = null, arrastando = false, visto = null, ac = null;
-const ult = { mapa: "", rol: "", av: "" };
+const ult = { mapa: "", rol: "", av: "", arq: "" };
 
 function el(tag, at = {}, txt) {
   const e = document.createElementNS(NS, tag);
@@ -240,7 +266,7 @@ function iniciar() {
   if (GM) {
     nt.value = dados.notas || "";
     let t; nt.addEventListener("input", () => { clearTimeout(t); t = setTimeout(() => api("/api/mestre/notas", { texto: nt.value }), 800); });
-    controlesMestre();
+    controlesMestre(); controlesArquivos();
   } else {
     nt.value = localStorage.getItem("notas") || "";
     nt.addEventListener("input", () => localStorage.setItem("notas", nt.value));
@@ -261,6 +287,7 @@ async function carregar() {
   const rl = JSON.stringify(dados.rolagens);
   if (rl !== ult.rol) { ult.rol = rl; listarRolagens(); }
   tratarAvisos();
+  listarArquivos();
   if (GM) $("#dt-atual") && ($("#dt-atual").textContent = dados.dt ? "DT atual: " + dados.dt + " (jogadores veem só sucesso ou falha)" : "Nenhuma DT definida.");
   return true;
 }
@@ -365,6 +392,80 @@ function mostrarAviso(a) {
   $("#alerta-texto").textContent = a.texto;
   $("#alerta").hidden = false;
   try { (SONS[a.som] || SONS.sistema)(); } catch (e) {}
+}
+
+/* ---------- arquivos ---------- */
+let arqEdit = null, arqVistos = null;
+const arqNovos = new Set();
+function listarArquivos() {
+  const js = JSON.stringify(dados.arquivos);
+  if (js === ult.arq) return;
+  ult.arq = js;
+  if (!GM) {
+    const ids = dados.arquivos.map(a => a.id);
+    if (arqVistos === null) arqVistos = new Set(ids);
+    else for (const id of ids) if (!arqVistos.has(id)) { arqVistos.add(id); arqNovos.add(id); try { SONS.sistema(); } catch (e) {} }
+  }
+  renderArquivos();
+}
+function renderArquivos() {
+  const ul = $("#arq-lista"); ul.replaceChildren();
+  const lista = [...dados.arquivos].sort((a, b) => (a.pasta || "").localeCompare(b.pasta || "") || a.titulo.localeCompare(b.titulo));
+  if (!lista.length) {
+    const li = document.createElement("li"); li.className = "fraco";
+    li.textContent = GM ? "Nenhum documento. Crie um abaixo." : "Nenhum arquivo disponível."; ul.appendChild(li);
+  }
+  let pasta = null;
+  for (const a of lista) {
+    if ((a.pasta || "") !== pasta) {
+      pasta = a.pasta || "";
+      if (pasta) { const h = document.createElement("li"); h.className = "fraco"; h.textContent = pasta + "/"; ul.appendChild(h); }
+    }
+    const prot = GM ? !!a.senha : a.bloqueado;
+    const li = document.createElement("li");
+    const b = btn(a.titulo + (prot ? " (protegido)" : "") + (GM ? (a.liberado ? " [liberado]" : " [oculto]") : "") + (arqNovos.has(a.id) ? " (novo)" : ""),
+      () => GM ? editarArquivo(a) : abrirArquivo(a));
+    if (arqNovos.has(a.id)) b.classList.add("novo");
+    li.appendChild(b);
+    if (GM) { li.className = "doc"; li.appendChild(btn(a.liberado ? "Recolher" : "Liberar", () => acao("/api/mestre/arquivo", { ...a, liberado: !a.liberado }))); }
+    ul.appendChild(li);
+  }
+}
+function abrirArquivo(a) {
+  arqNovos.delete(a.id); renderArquivos();
+  const v = $("#arq-visor"), c = document.createElement("div");
+  v.replaceChildren();
+  const mostrar = async senha => {
+    const d = await (await api("/api/arquivo", { id: a.id, senha })).json();
+    c.replaceChildren();
+    if (!d.ok) { const p = document.createElement("p"); p.textContent = d.erro || "Erro."; p.style.color = "var(--al)"; c.appendChild(p); return; }
+    const t = document.createElement("strong"), pre = document.createElement("pre");
+    t.textContent = d.titulo; pre.textContent = d.texto; c.append(t, pre);
+  };
+  if (a.bloqueado) {
+    const i = document.createElement("input"), l = document.createElement("div");
+    i.placeholder = "Senha do arquivo"; l.className = "linha";
+    i.addEventListener("keydown", e => { if (e.key === "Enter") mostrar(i.value); });
+    l.append(i, btn("Abrir", () => mostrar(i.value)));
+    v.append(l, c);
+  } else { v.append(c); mostrar(""); }
+}
+function editarArquivo(a) {
+  arqEdit = a ? a.id : null;
+  $("#arq-titulo").value = a ? a.titulo : ""; $("#arq-pasta").value = a ? a.pasta : "";
+  $("#arq-senha").value = a ? a.senha : ""; $("#arq-texto").value = a ? a.texto : ""; $("#arq-lib").checked = a ? a.liberado : false;
+}
+function controlesArquivos() {
+  $("#arq-novo").addEventListener("click", () => editarArquivo(null));
+  $("#arq-salvar").addEventListener("click", async () => {
+    arqEdit = arqEdit || "d" + Date.now().toString(36);
+    await acao("/api/mestre/arquivo", { id: arqEdit, titulo: $("#arq-titulo").value, pasta: $("#arq-pasta").value,
+      senha: $("#arq-senha").value, texto: $("#arq-texto").value, liberado: $("#arq-lib").checked });
+  });
+  $("#arq-apagar").addEventListener("click", async () => {
+    if (!arqEdit || !confirm("Apagar este documento?")) return;
+    await acao("/api/mestre/arquivo", { id: arqEdit, apagar: true }); editarArquivo(null);
+  });
 }
 
 /* ---------- mestre ---------- */

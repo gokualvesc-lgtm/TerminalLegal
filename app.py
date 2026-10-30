@@ -1,3 +1,4 @@
+import json
 import os
 import random
 
@@ -139,6 +140,31 @@ def rolagem_visivel(r, gm):
     return d
 
 
+ARQUIVO_DOCS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "arquivos.json")
+
+
+def _carregar_docs():
+    try:
+        with open(ARQUIVO_DOCS, encoding="utf-8") as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return []
+
+
+docs = _carregar_docs()  # documentos da janela Arquivos, salvos em arquivos.json
+
+
+def gravar_docs():
+    with open(ARQUIVO_DOCS, "w", encoding="utf-8") as f:
+        json.dump(docs, f, ensure_ascii=False, indent=1)
+
+
+def docs_publicos():
+    # o texto NUNCA sai nesta lista: só pelo /api/arquivo, e com a senha, se houver
+    return [{"id": d["id"], "titulo": d["titulo"], "pasta": d["pasta"], "bloqueado": bool(d["senha"])}
+            for d in docs if d["liberado"]]
+
+
 def dados_publicos():
     st = estado_mapa
     vis = {a["id"] for a in ANDARES if st["andares"][a["id"]]}
@@ -150,6 +176,7 @@ def dados_publicos():
                 for t in st["tokens"] if t["visivel"] and t["andar"] in vis],
         avisos=st["avisos"][-5:],
         rolagens=[rolagem_visivel(r, False) for r in st["rolagens"] if not r["secreta"]][-15:],
+        arquivos=docs_publicos(),
     )
 
 
@@ -165,7 +192,7 @@ def dados_mestre():
         salas=[{**s, "estado": st["salas"][s["id"]]} for s in SALAS],
         tokens=st["tokens"], avisos=st["avisos"][-5:],
         rolagens=[rolagem_visivel(r, True) for r in st["rolagens"]][-15:],
-        dt=st["dt"], notas=notas,
+        dt=st["dt"], notas=notas, arquivos=docs,
     )
 
 
@@ -295,6 +322,40 @@ def mestre_token():
 def mestre_reiniciar():
     estado_mapa.clear()
     estado_mapa.update(estado_inicial())
+
+
+@app.post("/api/arquivo")
+def abrir_arquivo():
+    d = corpo()
+    gm = pin_ok()
+    doc = next((x for x in docs if x["id"] == d.get("id")), None)
+    if not doc or not (doc["liberado"] or gm):
+        return jsonify(ok=False, erro="Arquivo indisponível."), 404
+    if doc["senha"] and not gm and normalizar(str(d.get("senha", ""))) != normalizar(doc["senha"]):
+        return jsonify(ok=False, erro="Senha incorreta."), 401
+    return jsonify(ok=True, titulo=doc["titulo"], texto=doc["texto"])
+
+
+@app.post("/api/mestre/arquivo")
+@so_mestre
+def mestre_arquivo():
+    d = corpo()
+    ident = "".join(c for c in str(d.get("id", "")) if c.isalnum())[:20]
+    if not ident:
+        return
+    if d.get("apagar"):
+        docs[:] = [x for x in docs if x["id"] != ident]
+    else:
+        novo = dict(id=ident, titulo=str(d.get("titulo", "")).strip()[:80] or "Sem título",
+                    pasta=str(d.get("pasta", "")).strip()[:40], texto=str(d.get("texto", ""))[:20000],
+                    senha=str(d.get("senha", "")).strip()[:40], liberado=bool(d.get("liberado")))
+        for i, x in enumerate(docs):
+            if x["id"] == ident:
+                docs[i] = novo
+                break
+        else:
+            docs.append(novo)
+    gravar_docs()
 
 
 if __name__ == "__main__":
